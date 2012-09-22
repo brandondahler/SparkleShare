@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 using SparkleLib;
 
@@ -30,6 +31,8 @@ namespace SparkleLib.Git {
 		private bool user_is_set;
         private bool remote_url_is_set;
         private bool use_git_bin;
+
+        private Object sync_lock = new Object();
 
 
         public SparkleRepo (string path, SparkleConfig config) : base (path, config)
@@ -168,161 +171,168 @@ namespace SparkleLib.Git {
 
         public override bool SyncUp ()
         {
-            if (HasLocalChanges) {
-                Add ();
+            lock(this.sync_lock)
+            {
 
-                string message = FormatCommitMessage ();
-                Commit (message);
-            }
+                if (HasLocalChanges) {
+                    Add ();
 
-            SparkleGit git;
-
-            if (this.use_git_bin) {
-                if (this.remote_url_is_set) {
-                    git = new SparkleGit (LocalPath, "config remote.origin.url \"" + RemoteUrl + "\"");
-                    git.StartAndWaitForExit ();
-
-                    this.remote_url_is_set = true;
+                    string message = FormatCommitMessage ();
+                    Commit (message);
                 }
 
-                SparkleGitBin git_bin = new SparkleGitBin (LocalPath, "push");
-                git_bin.StartAndWaitForExit ();
+                SparkleGit git;
 
-                // TODO: Progress
-            }
+                if (this.use_git_bin) {
+                    if (this.remote_url_is_set) {
+                        git = new SparkleGit (LocalPath, "config remote.origin.url \"" + RemoteUrl + "\"");
+                        git.StartAndWaitForExit ();
 
-            git = new SparkleGit (LocalPath,
-                "push --progress " + // Redirects progress stats to standarderror
-                "\"" + RemoteUrl + "\" master");
-
-            git.StartInfo.RedirectStandardError = true;
-            git.Start ();
-
-            double percentage = 1.0;
-            Regex progress_regex = new Regex (@"([0-9]+)%", RegexOptions.Compiled);
-
-            while (!git.StandardError.EndOfStream) {
-                string line   = git.StandardError.ReadLine ();
-                Match match   = progress_regex.Match (line);
-                string speed  = "";
-                double number = 0.0;
-
-                if (match.Success) {
-                    number = double.Parse (match.Groups [1].Value);
-
-                    // The pushing progress consists of two stages: the "Compressing
-                    // objects" stage which we count as 20% of the total progress, and
-                    // the "Writing objects" stage which we count as the last 80%
-                    if (line.StartsWith ("Compressing")) {
-                        // "Compressing objects" stage
-                        number = (number / 100 * 20);
-
-                    } else {
-                        if (line.StartsWith ("ERROR: QUOTA EXCEEDED")) {
-                            int quota_limit = int.Parse (line.Substring (21).Trim ());
-                            throw new QuotaExceededException ("Quota exceeded", quota_limit);
-                        }
-
-                        // "Writing objects" stage
-                        number = (number / 100 * 80 + 20);
-
-                        if (line.Contains ("|")) {
-                            speed = line.Substring (line.IndexOf ("|") + 1).Trim ();
-                            speed = speed.Replace (", done.", "").Trim ();
-                            speed = speed.Replace ("i", "");
-                            speed = speed.Replace ("KB/s", "ᴋʙ/s");
-                            speed = speed.Replace ("MB/s", "ᴍʙ/s");
-                        }
+                        this.remote_url_is_set = true;
                     }
 
+                    SparkleGitBin git_bin = new SparkleGitBin (LocalPath, "push");
+                    git_bin.StartAndWaitForExit ();
+
+                    // TODO: Progress
+                }
+
+                git = new SparkleGit (LocalPath,
+                    "push --progress " + // Redirects progress stats to standarderror
+                    "\"" + RemoteUrl + "\" master");
+
+                git.StartInfo.RedirectStandardError = true;
+                git.Start ();
+
+                double percentage = 1.0;
+                Regex progress_regex = new Regex (@"([0-9]+)%", RegexOptions.Compiled);
+
+                while (!git.StandardError.EndOfStream) {
+                    string line   = git.StandardError.ReadLine ();
+                    Match match   = progress_regex.Match (line);
+                    string speed  = "";
+                    double number = 0.0;
+
+                    if (match.Success) {
+                        number = double.Parse (match.Groups [1].Value);
+
+                        // The pushing progress consists of two stages: the "Compressing
+                        // objects" stage which we count as 20% of the total progress, and
+                        // the "Writing objects" stage which we count as the last 80%
+                        if (line.StartsWith ("Compressing")) {
+                            // "Compressing objects" stage
+                            number = (number / 100 * 20);
+
+                        } else {
+                            if (line.StartsWith ("ERROR: QUOTA EXCEEDED")) {
+                                int quota_limit = int.Parse (line.Substring (21).Trim ());
+                                throw new QuotaExceededException ("Quota exceeded", quota_limit);
+                            }
+
+                            // "Writing objects" stage
+                            number = (number / 100 * 80 + 20);
+
+                            if (line.Contains ("|")) {
+                                speed = line.Substring (line.IndexOf ("|") + 1).Trim ();
+                                speed = speed.Replace (", done.", "").Trim ();
+                                speed = speed.Replace ("i", "");
+                                speed = speed.Replace ("KB/s", "ᴋʙ/s");
+                                speed = speed.Replace ("MB/s", "ᴍʙ/s");
+                            }
+                        }
+
+                    } else {
+                        SparkleLogger.LogInfo ("Git", Name + " | " + line);
+                    }
+
+                    if (number >= percentage) {
+                        percentage = number;
+                        base.OnProgressChanged (percentage, speed);
+                    }
+                }
+
+                git.WaitForExit ();
+                UpdateSizes ();
+
+                if (git.ExitCode == 0) {
+                    ClearCache ();
+                    return true;
+
                 } else {
-                    SparkleLogger.LogInfo ("Git", Name + " | " + line);
+                    return false;
                 }
-
-                if (number >= percentage) {
-                    percentage = number;
-                    base.OnProgressChanged (percentage, speed);
-                }
-            }
-
-            git.WaitForExit ();
-            UpdateSizes ();
-
-            if (git.ExitCode == 0) {
-                ClearCache ();
-                return true;
-
-            } else {
-                return false;
             }
         }
 
 
         public override bool SyncDown ()
         {
-            SparkleGit git = new SparkleGit (LocalPath, "fetch --progress \"" + RemoteUrl + "\" master");
+            lock(this.sync_lock)
+            {
 
-            git.StartInfo.RedirectStandardError = true;
-            git.Start ();
+                SparkleGit git = new SparkleGit (LocalPath, "fetch --progress \"" + RemoteUrl + "\" master");
 
-            double percentage = 1.0;
-            Regex progress_regex = new Regex (@"([0-9]+)%", RegexOptions.Compiled);
+                git.StartInfo.RedirectStandardError = true;
+                git.Start ();
 
-            while (!git.StandardError.EndOfStream) {
-                string line   = git.StandardError.ReadLine ();
-                Match match   = progress_regex.Match (line);
-                string speed  = "";
-                double number = 0.0;
+                double percentage = 1.0;
+                Regex progress_regex = new Regex (@"([0-9]+)%", RegexOptions.Compiled);
 
-                if (match.Success) {
-                    number = double.Parse (match.Groups [1].Value);
+                while (!git.StandardError.EndOfStream) {
+                    string line   = git.StandardError.ReadLine ();
+                    Match match   = progress_regex.Match (line);
+                    string speed  = "";
+                    double number = 0.0;
 
-                    // The fetching progress consists of two stages: the "Compressing
-                    // objects" stage which we count as 20% of the total progress, and
-                    // the "Receiving objects" stage which we count as the last 80%
-                    if (line.StartsWith ("Compressing")) {
-                        // "Compressing objects" stage
-                        number = (number / 100 * 20);
+                    if (match.Success) {
+                        number = double.Parse (match.Groups [1].Value);
+
+                        // The fetching progress consists of two stages: the "Compressing
+                        // objects" stage which we count as 20% of the total progress, and
+                        // the "Receiving objects" stage which we count as the last 80%
+                        if (line.StartsWith ("Compressing")) {
+                            // "Compressing objects" stage
+                            number = (number / 100 * 20);
+
+                        } else {
+                            // "Writing objects" stage
+                            number = (number / 100 * 80 + 20);
+
+                            if (line.Contains ("|")) {
+                                speed = line.Substring (line.IndexOf ("|") + 1).Trim ();
+                                speed = speed.Replace (", done.", "").Trim ();
+                                speed = speed.Replace ("i", "");
+                                speed = speed.Replace ("KB/s", "ᴋʙ/s");
+                                speed = speed.Replace ("MB/s", "ᴍʙ/s");
+                            }
+                        }
 
                     } else {
-                        // "Writing objects" stage
-                        number = (number / 100 * 80 + 20);
-
-                        if (line.Contains ("|")) {
-                            speed = line.Substring (line.IndexOf ("|") + 1).Trim ();
-                            speed = speed.Replace (", done.", "").Trim ();
-                            speed = speed.Replace ("i", "");
-                            speed = speed.Replace ("KB/s", "ᴋʙ/s");
-                            speed = speed.Replace ("MB/s", "ᴍʙ/s");
-                        }
+                        SparkleLogger.LogInfo ("Git", Name + " | " + line);
                     }
-
-                } else {
-                    SparkleLogger.LogInfo ("Git", Name + " | " + line);
-                }
                 
 
-                if (number >= percentage) {
-                    percentage = number;
-                    base.OnProgressChanged (percentage, speed);
+                    if (number >= percentage) {
+                        percentage = number;
+                        base.OnProgressChanged (percentage, speed);
+                    }
                 }
-            }
 
-            git.WaitForExit ();
-            UpdateSizes ();
+                git.WaitForExit ();
+                UpdateSizes ();
 
-            if (git.ExitCode == 0) {
-                Rebase ();
+                if (git.ExitCode == 0) {
+                    Rebase ();
 
-                string identifier_file_path = Path.Combine (LocalPath, ".sparkleshare");
-				File.SetAttributes (identifier_file_path, FileAttributes.Hidden);
+                    string identifier_file_path = Path.Combine (LocalPath, ".sparkleshare");
+				    File.SetAttributes (identifier_file_path, FileAttributes.Hidden);
 
-                ClearCache ();
+                    ClearCache ();
+				    return true;
 
-				return true;
-
-            } else {
-                return false;
+                } else {
+                    return false;
+                }
             }
         }
 
