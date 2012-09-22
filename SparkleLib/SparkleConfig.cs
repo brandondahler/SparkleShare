@@ -44,7 +44,10 @@ namespace SparkleLib {
 
         public string FoldersPath {
             get {
-                return Path.Combine (HomePath, "SparkleShare");
+                if (GetConfigOption ("folders_path") != null)                      
+                    return GetConfigOption ("folders_path");
+                else
+                    return Path.Combine (HomePath, "SparkleShare");
             }
         }
 
@@ -165,6 +168,8 @@ namespace SparkleLib {
 
                 foreach (XmlNode node_folder in SelectNodes ("/sparkleshare/folder"))
                     folders.Add (node_folder ["name"].InnerText);
+
+                folders.Sort ();
 
                 return folders;
             }

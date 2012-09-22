@@ -45,11 +45,19 @@ namespace SparkleShare {
         private NSMenuItem notify_item;
         private NSMenuItem recent_events_item;
         private NSMenuItem quit_item;
+        
+        private NSImage syncing_idle_image;
+        private NSImage syncing_up_image;
+        private NSImage syncing_down_image;
+        private NSImage syncing_image;
+        private NSImage syncing_error_image;
 
-        private NSImage [] animation_frames;
-        private NSImage [] animation_frames_active;
-        private NSImage error_image;
-        private NSImage error_image_active;
+        private NSImage syncing_idle_image_active;
+        private NSImage syncing_up_image_active;
+        private NSImage syncing_down_image_active;
+        private NSImage syncing_image_active;
+        private NSImage syncing_error_image_active;
+
         private NSImage folder_image;
         private NSImage caution_image;
         private NSImage sparkleshare_image;
@@ -62,15 +70,25 @@ namespace SparkleShare {
         {
             using (var a = new NSAutoreleasePool ())
             {
-                CreateAnimationFrames ();
-
                 this.status_item = NSStatusBar.SystemStatusBar.CreateStatusItem (28);
                 this.status_item.HighlightMode = true;
-                this.status_item.Image = this.animation_frames [0];
 
-                this.status_item.Image               = this.animation_frames [0];
-                this.status_item.Image.Size          = new SizeF (16, 16);
-                this.status_item.AlternateImage      = this.animation_frames_active [0];
+                this.syncing_idle_image  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-idle.png"));
+                this.syncing_up_image    = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-up.png"));
+                this.syncing_down_image  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-down.png"));
+                this.syncing_image  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing.png"));
+                this.syncing_error_image = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-error.png"));
+                
+                this.syncing_idle_image_active  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-idle-active.png"));
+                this.syncing_up_image_active    = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-up-active.png"));
+                this.syncing_down_image_active  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-down-active.png"));
+                this.syncing_image_active  = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-active.png"));
+                this.syncing_error_image_active = new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-error-active.png"));
+
+                this.status_item.Image      = this.syncing_idle_image;
+                this.status_item.Image.Size = new SizeF (16, 16);
+
+                this.status_item.AlternateImage      = this.syncing_idle_image_active;
                 this.status_item.AlternateImage.Size = new SizeF (16, 16);
 
                 this.folder_image       = NSImage.ImageNamed ("NSFolder");
@@ -81,22 +99,40 @@ namespace SparkleShare {
             }
 			
 
-            Controller.UpdateIconEvent += delegate (int icon_frame) {
+            Controller.UpdateIconEvent += delegate (IconState state) {
                 using (var a = new NSAutoreleasePool ())
                 {
                     InvokeOnMainThread (delegate {
-                        if (icon_frame > -1) {
-                            this.status_item.Image               = this.animation_frames [icon_frame];
-                            this.status_item.Image.Size          = new SizeF (16, 16);
-                            this.status_item.AlternateImage      = this.animation_frames_active [icon_frame];
-                            this.status_item.AlternateImage.Size = new SizeF (16, 16);
-
-                        } else {
-                            this.status_item.Image               = this.error_image;
-                            this.status_item.AlternateImage      = this.error_image_active;
-                            this.status_item.Image.Size          = new SizeF (16, 16);
-                            this.status_item.AlternateImage.Size = new SizeF (16, 16);
+                        switch (state) {
+                        case IconState.Idle: {
+                            this.status_item.Image          = this.syncing_idle_image;
+                            this.status_item.AlternateImage = this.syncing_idle_image_active;
+                            break;
                         }
+                        case IconState.SyncingUp: {
+                            this.status_item.Image          = this.syncing_up_image;
+                            this.status_item.AlternateImage = this.syncing_up_image_active;
+                            break;
+                        }
+                        case IconState.SyncingDown: {
+                            this.status_item.Image          = this.syncing_down_image;
+                            this.status_item.AlternateImage = this.syncing_down_image_active;
+                            break;
+                        }
+                        case IconState.Syncing: {
+                            this.status_item.Image          = this.syncing_image;
+                            this.status_item.AlternateImage = this.syncing_image_active;
+                            break;
+                        }
+                        case IconState.Error: {
+                            this.status_item.Image          = this.syncing_error_image;
+                            this.status_item.AlternateImage = this.syncing_error_image_active;
+                            break;
+                        }
+                        }
+
+                        this.status_item.Image.Size = new SizeF (16, 16);
+                        this.status_item.AlternateImage.Size = new SizeF (16, 16);
                     });
                 }
             };
@@ -126,7 +162,7 @@ namespace SparkleShare {
                 }
             };
 
-            Controller.UpdateOpenRecentEventsItemEvent += delegate (bool events_item_enabled) {
+            Controller.UpdateRecentEventsItemEvent += delegate (bool events_item_enabled) {
                 using (var a = new NSAutoreleasePool ())
                 {
                     InvokeOnMainThread (delegate {
@@ -172,12 +208,12 @@ namespace SparkleShare {
 
                 this.recent_events_item = new NSMenuItem () {
                     Title   = "Recent Changes…",
-                    Enabled = Controller.OpenRecentEventsItemEnabled
+                    Enabled = Controller.RecentEventsItemEnabled
                 };
 
                 if (Controller.Folders.Length > 0) {
                     this.recent_events_item.Activated += delegate {
-                        Controller.OpenRecentEventsClicked ();
+                        Controller.RecentEventsClicked ();
                     };
                 }
 
@@ -236,10 +272,19 @@ namespace SparkleShare {
                         NSMenuItem item = new NSMenuItem ();
                         item.Title      = folder_name;
 
-                        if (Program.Controller.UnsyncedFolders.Contains (folder_name))
-                            item.Image = this.caution_image;
-                        else
+                        if (!string.IsNullOrEmpty (Controller.FolderErrors [i])) {
+                            item.Image   = this.caution_image;
+                            item.Submenu = new NSMenu ();
+
+                            NSMenuItem error_item = new NSMenuItem () {
+                                Title = Controller.FolderErrors [i]
+                            };
+
+                            item.Submenu.AddItem (error_item);
+                        
+                        } else {
                             item.Image = this.folder_image;
+                        }
 
                         item.Image.Size = new SizeF (16, 16);
                         this.folder_tasks [i] = OpenFolderDelegate (folder_name);
@@ -255,10 +300,19 @@ namespace SparkleShare {
                         NSMenuItem item = new NSMenuItem ();
                         item.Title      = folder_name;
 
-                        if (Program.Controller.UnsyncedFolders.Contains (folder_name))
-                            item.Image = this.caution_image;
-                        else
+                        if (!string.IsNullOrEmpty (Controller.OverflowFolderErrors [i])) {
+                            item.Image   = this.caution_image;    
+                            item.Submenu = new NSMenu ();
+                            
+                            NSMenuItem error_item = new NSMenuItem () {
+                                Title = Controller.OverflowFolderErrors [i]
+                            };
+                            
+                            item.Submenu.AddItem (error_item);
+                    
+                        } else {
                             item.Image = this.folder_image;
+                        }
 
                         item.Image.Size   = new SizeF (16, 16);
                         this.overflow_tasks [i] = OpenFolderDelegate (folder_name);
@@ -313,32 +367,6 @@ namespace SparkleShare {
             return delegate {
                 Controller.SubfolderClicked (name);
             };
-        }
-
-
-        private void CreateAnimationFrames ()
-        {
-            this.animation_frames = new NSImage [] {
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-i.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-ii.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iii.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iiii.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iiiii.png"))
-            };
-
-            this.animation_frames_active = new NSImage [] {
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-i-active.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-ii-active.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iii-active.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iiii-active.png")),
-                new NSImage (Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-iiiii-active.png"))
-            };
-			
-            this.error_image = new NSImage (
-                Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-error.png"));
-
-            this.error_image_active = new NSImage (
-                Path.Combine (NSBundle.MainBundle.ResourcePath, "Pixmaps", "process-syncing-error.png"));
         }
     }
     

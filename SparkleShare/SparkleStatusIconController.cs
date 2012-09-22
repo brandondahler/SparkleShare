@@ -16,9 +16,7 @@
 
 
 using System;
-using System.Timers;
-
-using Threading = System.Threading;
+using System.Threading;
 
 using SparkleLib;
 
@@ -36,7 +34,7 @@ namespace SparkleShare {
     public class SparkleStatusIconController {
 
         public event UpdateIconEventHandler UpdateIconEvent = delegate { };
-        public delegate void UpdateIconEventHandler (int icon_frame);
+        public delegate void UpdateIconEventHandler (IconState state);
 
         public event UpdateMenuEventHandler UpdateMenuEvent = delegate { };
         public delegate void UpdateMenuEventHandler (IconState state);
@@ -47,38 +45,21 @@ namespace SparkleShare {
         public event UpdateQuitItemEventHandler UpdateQuitItemEvent = delegate { };
         public delegate void UpdateQuitItemEventHandler (bool quit_item_enabled);
 
-        public event UpdateOpenRecentEventsItemEventHandler UpdateOpenRecentEventsItemEvent = delegate { };
-        public delegate void UpdateOpenRecentEventsItemEventHandler (bool open_recent_events_item_enabled);
+        public event UpdateRecentEventsItemEventHandler UpdateRecentEventsItemEvent = delegate { };
+        public delegate void UpdateRecentEventsItemEventHandler (bool recent_events_item_enabled);
 
         public IconState CurrentState = IconState.Idle;
         public string StateText = "Welcome to SparkleShare!";
 
-
         public readonly int MenuOverflowThreshold   = 9;
         public readonly int MinSubmenuOverflowCount = 3;
 
-
-        public string [] Folders {
-            get {
-                int overflow_count = (Program.Controller.Folders.Count - MenuOverflowThreshold);
-
-                if (overflow_count >= MinSubmenuOverflowCount)
-                    return Program.Controller.Folders.GetRange (0, MenuOverflowThreshold).ToArray ();
-                else
-                    return Program.Controller.Folders.ToArray ();
-            }
-        }
-
-        public string [] OverflowFolders {
-            get {
-                int overflow_count = (Program.Controller.Folders.Count - MenuOverflowThreshold);
-
-                if (overflow_count >= MinSubmenuOverflowCount)
-                    return Program.Controller.Folders.GetRange (MenuOverflowThreshold, overflow_count).ToArray ();
-                else
-                    return new string [0];
-            }
-        }
+        public string [] Folders;
+        public string [] FolderErrors;
+        
+        public string [] OverflowFolders;
+        public string [] OverflowFolderErrors;
+        
 
         public string FolderSize {
             get {
@@ -112,20 +93,16 @@ namespace SparkleShare {
             }
         }
 
-        public bool OpenRecentEventsItemEnabled {
+        public bool RecentEventsItemEnabled {
             get {
                 return (Program.Controller.RepositoriesLoaded && Program.Controller.Folders.Count > 0);
             }
         }
 
 
-        private Timer animation;
-        private int animation_frame_number;
-
-
         public SparkleStatusIconController ()
         {
-            InitAnimation ();
+            UpdateFolders ();
 
             Program.Controller.FolderListChanged += delegate {
                 if (CurrentState != IconState.Error) {
@@ -137,12 +114,16 @@ namespace SparkleShare {
                         StateText = "Files up to date " + FolderSize;
                 }
 
+                UpdateFolders ();
+
                 UpdateStatusItemEvent (StateText);
-                UpdateOpenRecentEventsItemEvent (OpenRecentEventsItemEnabled);
+                UpdateRecentEventsItemEvent (RecentEventsItemEnabled);
                 UpdateMenuEvent (CurrentState);
             };
 
             Program.Controller.OnIdle += delegate {
+                UpdateFolders ();
+
                 if (CurrentState != IconState.Error) {
                     CurrentState = IconState.Idle;
 
@@ -154,14 +135,9 @@ namespace SparkleShare {
 
                 UpdateQuitItemEvent (QuitItemEnabled);
                 UpdateStatusItemEvent (StateText);
-
-                this.animation.Stop ();
-
-                UpdateIconEvent (0);
+                UpdateIconEvent (CurrentState);
                 UpdateMenuEvent (CurrentState);
             };
-
-            int periods = 3;
 
             Program.Controller.OnSyncing += delegate {
 				int repos_syncing_up   = 0;
@@ -179,44 +155,34 @@ namespace SparkleShare {
 				    repos_syncing_down > 0) {
 					
 					CurrentState = IconState.Syncing;
-                    StateText    = "Syncing changes";
+                    StateText    = "Syncing changes…";
 				
 				} else if (repos_syncing_down == 0) {
 					CurrentState = IconState.SyncingUp;
-                    StateText    = "Sending changes";
+                    StateText    = "Sending changes…";
 					
 				} else {
 					CurrentState = IconState.SyncingDown;
-                    StateText    = "Receiving changes";
+                    StateText    = "Receiving changes…";
 				}
-
-                periods++;
-
-                for (int i = 0; i < periods; i++)
-                    StateText += ".";
-
-                if (periods == 3)
-                    periods = 0;
 
                 StateText += " " + ProgressPercentage + "%  " + ProgressSpeed;
 
+                UpdateIconEvent (CurrentState);
                 UpdateStatusItemEvent (StateText);
                 UpdateQuitItemEvent (QuitItemEnabled);
-
-                if (!this.animation.Enabled)
-                    this.animation.Start ();
             };
 
             Program.Controller.OnError += delegate {
                 CurrentState = IconState.Error;
                 StateText    = "Failed to send some changes";
 
+                UpdateFolders ();
+                
                 UpdateQuitItemEvent (QuitItemEnabled);
                 UpdateStatusItemEvent (StateText);
-
-                this.animation.Stop ();
-
-                UpdateIconEvent (-1);
+                UpdateIconEvent (CurrentState);
+                UpdateMenuEvent (CurrentState);
             };
         }
 
@@ -239,9 +205,9 @@ namespace SparkleShare {
         }
 
 
-        public void OpenRecentEventsClicked ()
+        public void RecentEventsClicked ()
         {
-            new Threading.Thread (() => Program.Controller.ShowEventLogWindow ()).Start ();
+            new Thread (() => Program.Controller.ShowEventLogWindow ()).Start ();
         }
 
 
@@ -257,22 +223,51 @@ namespace SparkleShare {
         }
 
 
-        private void InitAnimation ()
+        private void UpdateFolders ()
         {
-            this.animation_frame_number = 0;
+            int overflow_count = (Program.Controller.Folders.Count - MenuOverflowThreshold);
 
-            this.animation = new Timer () {
-                Interval = 50
-            };
+            if (overflow_count >= MinSubmenuOverflowCount) {
+                Folders = Program.Controller.Folders.GetRange (0, MenuOverflowThreshold).ToArray ();
+                OverflowFolders = Program.Controller.Folders.GetRange (MenuOverflowThreshold, overflow_count).ToArray ();
+            } else {
+                Folders = Program.Controller.Folders.ToArray ();
+                OverflowFolders = new string [0];
+            }
 
-            this.animation.Elapsed += delegate {
-                if (this.animation_frame_number < 4)
-                    this.animation_frame_number++;
+            string [] errors = new string [Folders.Length];
+            string [] overflow_errors = new string [OverflowFolders.Length];
+            
+            int i = 0;
+            foreach (SparkleRepoBase repo in Program.Controller.Repositories) {
+                string error_message;
+
+                if (repo.Error == ErrorStatus.HostUnreachable) {
+                    error_message = "Host unreachable";
+                    
+                } else if (repo.Error == ErrorStatus.HostIdentityChanged) {
+                    error_message = "Host identity changed";
+                    
+                } else if (repo.Error == ErrorStatus.AuthenticationFailed) {
+                    error_message = "Authentication failed";
+                    
+                } else if (repo.Error == ErrorStatus.DiskSpaceExcedeed) {
+                    error_message = "Out of disk space";
+                    
+                } else {
+                    error_message = "";
+                }
+
+                if (i > Folders.Length - 1)
+                    overflow_errors [i] = error_message;
                 else
-                    this.animation_frame_number = 0;
+                    errors [i] = error_message;
 
-                UpdateIconEvent (this.animation_frame_number);
-            };
+                i++;
+            }
+
+            FolderErrors         = errors;
+            OverflowFolderErrors = overflow_errors;
         }
     }
 }

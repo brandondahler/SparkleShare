@@ -17,11 +17,10 @@
 
 using System;
 
+using Gtk;
 #if HAVE_APP_INDICATOR
 using AppIndicator;
 #endif
-using Gtk;
-using Mono.Unix;
 
 namespace SparkleShare {
 
@@ -38,8 +37,13 @@ namespace SparkleShare {
         private ApplicationIndicator indicator;
         #else
         private StatusIcon status_icon;
-		private Gdk.Pixbuf [] animation_frames;
         #endif
+        
+        private Gdk.Pixbuf syncing_idle_image  = SparkleUIHelpers.GetIcon ("sparkleshare", 24);
+        private Gdk.Pixbuf syncing_up_image    = SparkleUIHelpers.GetIcon ("process-syncing-up", 24);
+        private Gdk.Pixbuf syncing_down_image  = SparkleUIHelpers.GetIcon ("process-syncing-down", 24);
+        private Gdk.Pixbuf syncing_image       = SparkleUIHelpers.GetIcon ("process-syncing", 24);
+        private Gdk.Pixbuf syncing_error_image = SparkleUIHelpers.GetIcon ("process-syncing-error", 24);
 
 
         public SparkleStatusIcon ()
@@ -50,10 +54,8 @@ namespace SparkleShare {
 
             this.indicator.Status = Status.Active;
             #else
-            CreateAnimationFrames ();
-			
 			this.status_icon        = new StatusIcon ();
-            this.status_icon.Pixbuf = this.animation_frames [0];
+            this.status_icon.Pixbuf = this.syncing_idle_image;
 
             this.status_icon.Activate  += ShowMenu; // Primary mouse button click
             this.status_icon.PopupMenu += ShowMenu; // Secondary mouse button click
@@ -61,35 +63,56 @@ namespace SparkleShare {
 
             CreateMenu ();
 
-
-            Controller.UpdateIconEvent += delegate (int icon_frame) {
+            Controller.UpdateIconEvent += delegate (IconState state) {
                 Application.Invoke (delegate {
-                    if (icon_frame > -1) {
+                    switch (state) {
+                    case IconState.Idle: {
                         #if HAVE_APP_INDICATOR
-                        string icon_name = "process-syncing-";
-                        for (int i = 0; i <= icon_frame; i++)
-                            icon_name += "i";
-
-                        this.indicator.IconName = icon_name;
-
-                        // Force update of the icon
-                        this.indicator.Status = Status.Attention;
-                        this.indicator.Status = Status.Active;
+                        this.indicator.IconName = "sparkleshare";
                         #else
-                        this.status_icon.Pixbuf = this.animation_frames [icon_frame];
+                        this.status_icon.Pixbuf = this.syncing_idle_image;
                         #endif
-
-                    } else {
+                        break;
+                    }
+                    case IconState.SyncingUp: {
+                        #if HAVE_APP_INDICATOR
+                        this.indicator.IconName = "process-syncing-up";
+                        #else
+                        this.status_icon.Pixbuf = this.syncing_up_image;
+                        #endif
+                        break;
+                    }
+                    case IconState.SyncingDown: {                   
+                        #if HAVE_APP_INDICATOR
+                        this.indicator.IconName = "process-syncing-down";
+                        #else
+                        this.status_icon.Pixbuf = this.syncing_down_image;
+                        #endif
+                        break;
+                    }
+                    case IconState.Syncing: {
+                        #if HAVE_APP_INDICATOR
+                        this.indicator.IconName = "process-syncing";
+                        #else
+                        this.status_icon.Pixbuf = this.syncing_image;
+                        #endif
+                        break;
+                    }
+                    case IconState.Error: {
                         #if HAVE_APP_INDICATOR
                         this.indicator.IconName = "process-syncing-error";
-
-                        // Force update of the icon
-                        this.indicator.Status = Status.Attention;
-                        this.indicator.Status = Status.Active;
                         #else
-						this.status_icon.Pixbuf = SparkleUIHelpers.GetIcon ("process-syncing-error", 24);
+                        this.status_icon.Pixbuf = this.syncing_error_image;
                         #endif
+                        break;
                     }
+                    }
+
+                    #if HAVE_APP_INDICATOR
+                    // Force update of the status icon
+                    this.indicator.Status = Status.Attention;
+                    this.indicator.Status = Status.Active;
+                    #endif
                 });
             };
 
@@ -107,7 +130,7 @@ namespace SparkleShare {
                 });
             };
 
-            Controller.UpdateOpenRecentEventsItemEvent += delegate (bool item_enabled) {
+            Controller.UpdateRecentEventsItemEvent += delegate (bool item_enabled) {
                 Application.Invoke (delegate {
                     this.recent_events_item.Sensitive = item_enabled;
                     this.recent_events_item.ShowAll ();
@@ -144,46 +167,66 @@ namespace SparkleShare {
             this.menu.Add (folder_item);
 
                 if (Program.Controller.Folders.Count > 0) {
+                    int i = 0;
                     foreach (string folder_name in Controller.Folders) {
+                        ImageMenuItem item = new SparkleMenuItem (folder_name);
                         Gdk.Pixbuf folder_icon;
 
-                        if (Program.Controller.UnsyncedFolders.Contains (folder_name)) {
-                            folder_icon = IconTheme.Default.LoadIcon ("dialog-error", 16,
+                        if (!string.IsNullOrEmpty (Controller.FolderErrors [i])) {
+                            folder_icon = IconTheme.Default.LoadIcon ("dialog-warning", 16,
                                 IconLookupFlags.GenericFallback);
+
+                            item.Submenu = new Menu ();
+                                
+                            MenuItem error_item = new MenuItem (Controller.FolderErrors [i]) {
+                                Sensitive = false
+                            };
+                            
+                            (item.Submenu as Menu).Add (error_item);
 
                         } else {
                             folder_icon = IconTheme.Default.LoadIcon ("folder", 16,
                                 IconLookupFlags.GenericFallback);
                         }
 
-                        ImageMenuItem subfolder_item = new SparkleMenuItem (folder_name) {
-                            Image = new Image (folder_icon)
-                        };
+                        item.Image = new Image (folder_icon);
 
-                        subfolder_item.Activated += OpenFolderDelegate (folder_name);
-                        this.menu.Add (subfolder_item);
+                        item.Activated += OpenFolderDelegate (folder_name);
+                        this.menu.Add (item);
+
+                        i++;
                     }
 
                     Menu submenu = new Menu ();
 
+                    i = 0;
                     foreach (string folder_name in Controller.OverflowFolders) {
+                        ImageMenuItem item = new SparkleMenuItem (folder_name);
                         Gdk.Pixbuf folder_icon;
 
-                        if (Program.Controller.UnsyncedFolders.Contains (folder_name)) {
-                            folder_icon = IconTheme.Default.LoadIcon ("dialog-error", 16,
+                        if (!string.IsNullOrEmpty (Controller.OverflowFolderErrors [i])) {
+                            folder_icon = IconTheme.Default.LoadIcon ("dialog-warning", 16,
                                 IconLookupFlags.GenericFallback);
+
+                            item.Submenu = new Menu ();
+                            
+                            MenuItem error_item = new MenuItem (Controller.OverflowFolderErrors [i]) {
+                                Sensitive = false
+                            };
+                            
+                            (item.Submenu as Menu).Add (error_item);
 
                         } else {
                             folder_icon = IconTheme.Default.LoadIcon ("folder", 16,
                                 IconLookupFlags.GenericFallback);
                         }
 
-                        ImageMenuItem subfolder_item = new SparkleMenuItem (folder_name) {
-                            Image = new Image (folder_icon)
-                        };
+                        item.Image = new Image (folder_icon);
+                    
+                        item.Activated += OpenFolderDelegate (folder_name);
+                        submenu.Add (item);
 
-                        subfolder_item.Activated += OpenFolderDelegate (folder_name);
-                        submenu.Add (subfolder_item);
+                        i++;
                     }
 
                     if (submenu.Children.Length > 0) {
@@ -209,10 +252,10 @@ namespace SparkleShare {
 
             this.recent_events_item = new MenuItem ("Recent Changes…");
 
-                this.recent_events_item.Sensitive = Controller.OpenRecentEventsItemEnabled;
+                this.recent_events_item.Sensitive = Controller.RecentEventsItemEnabled;
 
                 this.recent_events_item.Activated += delegate {
-                    Controller.OpenRecentEventsClicked ();
+                    Controller.RecentEventsClicked ();
                 };
 
             this.menu.Add (this.recent_events_item);
@@ -240,7 +283,6 @@ namespace SparkleShare {
             this.menu.Add (notify_item);
             this.menu.Add (new SeparatorMenuItem ());
 
-
                 MenuItem about_item = new MenuItem ("About SparkleShare");
 
                 about_item.Activated += delegate {
@@ -249,7 +291,6 @@ namespace SparkleShare {
 
             this.menu.Add (about_item);
             this.menu.Add (new SeparatorMenuItem ());
-
 
                 this.quit_item = new MenuItem ("Quit") {
                     Sensitive = Controller.QuitItemEnabled
@@ -276,20 +317,6 @@ namespace SparkleShare {
                 Controller.SubfolderClicked (name);
             };
         }
-
-		
-		#if !HAVE_APP_INDICATOR
-        private void CreateAnimationFrames ()
-        {
-            this.animation_frames = new Gdk.Pixbuf [] {
-                SparkleUIHelpers.GetIcon ("process-syncing-i", 24),
-                SparkleUIHelpers.GetIcon ("process-syncing-ii", 24),
-                SparkleUIHelpers.GetIcon ("process-syncing-iii", 24),
-                SparkleUIHelpers.GetIcon ("process-syncing-iiii", 24),
-                SparkleUIHelpers.GetIcon ("process-syncing-iiiii", 24)
-            };
-        }
-		#endif
 		
 
         #if !HAVE_APP_INDICATOR

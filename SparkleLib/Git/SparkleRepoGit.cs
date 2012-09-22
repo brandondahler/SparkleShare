@@ -29,7 +29,6 @@ namespace SparkleLib.Git {
     public class SparkleRepo : SparkleRepoBase {
 
 		private bool user_is_set;
-        private bool remote_url_is_set;
         private bool use_git_bin;
 
         private Object sync_lock = new Object();
@@ -37,11 +36,15 @@ namespace SparkleLib.Git {
 
         public SparkleRepo (string path, SparkleConfig config) : base (path, config)
         {
+            // TODO: Set git locale to en-US
+
             SparkleGit git = new SparkleGit (LocalPath, "config --get filter.bin.clean");
-            git.Start ();
-            git.WaitForExit ();
-            
+            git.StartAndWaitForExit ();
+
             this.use_git_bin = (git.ExitCode == 0);
+
+            git = new SparkleGit (LocalPath, "config remote.origin.url \"" + RemoteUrl + "\"");
+            git.StartAndWaitForExit ();
 
             string rebase_apply_path = new string [] { LocalPath, ".git", "rebase-apply" }.Combine ();
 
@@ -159,6 +162,7 @@ namespace SparkleLib.Git {
                     SparkleLogger.LogInfo ("Git", Name + " | Remote changes found, local: " +
                         current_revision + ", remote: " + remote_revision);
 
+                    Error = ErrorStatus.None;
                     return true;
 
                 } else {
@@ -184,13 +188,6 @@ namespace SparkleLib.Git {
                 SparkleGit git;
 
                 if (this.use_git_bin) {
-                    if (this.remote_url_is_set) {
-                        git = new SparkleGit (LocalPath, "config remote.origin.url \"" + RemoteUrl + "\"");
-                        git.StartAndWaitForExit ();
-
-                        this.remote_url_is_set = true;
-                    }
-
                     SparkleGitBin git_bin = new SparkleGitBin (LocalPath, "push");
                     git_bin.StartAndWaitForExit ();
 
@@ -224,11 +221,6 @@ namespace SparkleLib.Git {
                             number = (number / 100 * 20);
 
                         } else {
-                            if (line.StartsWith ("ERROR: QUOTA EXCEEDED")) {
-                                int quota_limit = int.Parse (line.Substring (21).Trim ());
-                                throw new QuotaExceededException ("Quota exceeded", quota_limit);
-                            }
-
                             // "Writing objects" stage
                             number = (number / 100 * 80 + 20);
 
@@ -243,6 +235,9 @@ namespace SparkleLib.Git {
 
                     } else {
                         SparkleLogger.LogInfo ("Git", Name + " | " + line);
+
+                        if (FindError (line))
+                            return false;
                     }
 
                     if (number >= percentage) {
@@ -259,6 +254,7 @@ namespace SparkleLib.Git {
                     return true;
 
                 } else {
+                    Error = ErrorStatus.HostUnreachable;
                     return false;
                 }
             }
@@ -309,6 +305,9 @@ namespace SparkleLib.Git {
 
                     } else {
                         SparkleLogger.LogInfo ("Git", Name + " | " + line);
+
+                        if (FindError (line))
+                            return false;
                     }
                 
 
@@ -331,6 +330,7 @@ namespace SparkleLib.Git {
 				    return true;
 
                 } else {
+                    Error = ErrorStatus.HostUnreachable;
                     return false;
                 }
             }
@@ -561,6 +561,31 @@ namespace SparkleLib.Git {
         public override List<SparkleChangeSet> GetChangeSets (int count)
         {
             return GetChangeSetsInternal (null, count);
+        }
+
+
+        private bool FindError (string line)
+        {
+            Error = ErrorStatus.None;
+                
+            if (line.StartsWith ("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!") ||
+                line.StartsWith ("WARNING: POSSIBLE DNS SPOOFING DETECTED!")) {
+                
+                Error = ErrorStatus.HostIdentityChanged;
+                
+            } else if (line.StartsWith ("Permission denied")) {
+                Error = ErrorStatus.AuthenticationFailed;
+                
+            } else if (line.StartsWith ("error: Disk space exceeded")) {
+                Error = ErrorStatus.DiskSpaceExcedeed;
+            }
+            
+            if (Error != ErrorStatus.None) {
+                SparkleLogger.LogInfo ("Git", Name + " | Error status changed to " + Error);
+                return true;
+            } else {
+                return false;
+            }
         }
 
 

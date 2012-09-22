@@ -32,9 +32,12 @@ namespace SparkleShare {
     public class SparkleStatusIcon : Control {
         
         public SparkleStatusIconController Controller = new SparkleStatusIconController();
-
-        private Drawing.Bitmap [] animation_frames;
-        private Drawing.Bitmap error_icon;
+        
+        private Drawing.Bitmap syncing_idle_image;
+        private Drawing.Bitmap syncing_up_image;
+        private Drawing.Bitmap syncing_down_image;
+        private Drawing.Bitmap syncing_image;
+        private Drawing.Bitmap syncing_error_image;
 
         private ContextMenu context_menu;
 
@@ -45,25 +48,45 @@ namespace SparkleShare {
         
         private SparkleNotifyIcon notify_icon = new SparkleNotifyIcon ();
 
-        
-       
+
         public SparkleStatusIcon ()
 		{
-			CreateAnimationFrames ();
-
-			this.notify_icon.Icon = animation_frames [0];
+            this.syncing_idle_image  = SparkleUIHelpers.GetBitmap ("process-syncing-idle");
+            this.syncing_up_image    = SparkleUIHelpers.GetBitmap ("process-syncing-up");
+            this.syncing_down_image  = SparkleUIHelpers.GetBitmap ("process-syncing-down");
+            this.syncing_image       = SparkleUIHelpers.GetBitmap ("process-syncing");
+            this.syncing_error_image = SparkleUIHelpers.GetBitmap ("process-syncing-error");
+            
+            this.notify_icon.Icon = this.syncing_idle_image;
             this.notify_icon.HeaderText = "SparkleShare";
 
             CreateMenu ();
-         
 			
-			Controller.UpdateIconEvent += delegate (int icon_frame) {
+			Controller.UpdateIconEvent += delegate (IconState state) {
 				Dispatcher.BeginInvoke ((Action) delegate {
-					if (icon_frame > -1)
-						this.notify_icon.Icon = animation_frames [icon_frame];
-					else
-						this.notify_icon.Icon = this.error_icon;
-				});				
+                    switch (state) {
+                    case IconState.Idle: {
+                        this.notify_icon.Icon = this.syncing_idle_image;
+                        break;
+                    }
+                    case IconState.SyncingUp: {
+                        this.notify_icon.Icon = this.syncing_up_image;
+                        break;
+                    }
+                    case IconState.SyncingDown: {
+                        this.notify_icon.Icon = this.syncing_down_image;
+                        break;
+                    }
+                    case IconState.Syncing: {
+                        this.notify_icon.Icon = this.syncing_image;
+                        break;
+                    }
+                    case IconState.Error: {
+                        this.notify_icon.Icon = this.syncing_error_image;
+                        break;
+                    }
+                    }
+                });				
 			};
 			
 			Controller.UpdateStatusItemEvent += delegate (string state_text) {
@@ -87,7 +110,7 @@ namespace SparkleShare {
                 });
             };
 
-            Controller.UpdateOpenRecentEventsItemEvent += delegate (bool item_enabled) {
+            Controller.UpdateRecentEventsItemEvent += delegate (bool item_enabled) {
                   Dispatcher.BeginInvoke ((Action) delegate {
                     this.log_item.IsEnabled = item_enabled;
                     this.log_item.UpdateLayout ();
@@ -132,11 +155,11 @@ namespace SparkleShare {
             
             this.log_item = new SparkleMenuItem () {
                 Header    = "Recent changes…",
-                IsEnabled = Controller.OpenRecentEventsItemEnabled
+                IsEnabled = Controller.RecentEventsItemEnabled
             };
             
                 this.log_item.Click += delegate {
-                    Controller.OpenRecentEventsClicked ();
+                    Controller.RecentEventsClicked ();
                 };
             
             SparkleMenuItem notify_item = new SparkleMenuItem () {
@@ -184,6 +207,7 @@ namespace SparkleShare {
 			this.context_menu.Items.Add (folder_item);
 
             if (Controller.Folders.Length > 0) {
+                int i = 0;
                 foreach (string folder_name in Controller.Folders) {     
                     SparkleMenuItem subfolder_item = new SparkleMenuItem () {
                         Header = folder_name
@@ -197,26 +221,35 @@ namespace SparkleShare {
 		            	Height = 16
 					};
 					
-                    if (Program.Controller.UnsyncedFolders.Contains (folder_name)) {
-                    	subfolder_item.Icon = new Image () {
-							Source = (BitmapSource) Imaging.CreateBitmapSourceFromHIcon (
-								System.Drawing.SystemIcons.Exclamation.Handle, 
-								Int32Rect.Empty,
-								BitmapSizeOptions.FromWidthAndHeight (16,16)
-							)
-						};  
-						
+                    if (!string.IsNullOrEmpty (Controller.FolderErrors [i])) {
+                        subfolder_item.Icon = new Image () {
+                            Source = (BitmapSource) Imaging.CreateBitmapSourceFromHIcon (
+                                System.Drawing.SystemIcons.Exclamation.Handle, Int32Rect.Empty,
+                                BitmapSizeOptions.FromWidthAndHeight (16,16)
+                            )
+                        };
+
+                        SparkleMenuItem error_item = new SparkleMenuItem () {
+                            Header    = Controller.FolderErrors [i],
+                            IsEnabled = false
+                        };
+
+                        subfolder_item.Items.Add (error_item);
+                    	
 					} else {
                     	subfolder_item.Icon = subfolder_image;
 					}
 					
 					this.context_menu.Items.Add (subfolder_item);
+
+                    i++;
 				}
 				
 				SparkleMenuItem more_item = new SparkleMenuItem () {
                     Header = "More projects"
                 };
 				
+                i = 0;
                 foreach (string folder_name in Controller.OverflowFolders) {     
                     SparkleMenuItem subfolder_item = new SparkleMenuItem () {
                         Header = folder_name
@@ -230,20 +263,28 @@ namespace SparkleShare {
 		            	Height = 16
 					};
 					
-					if (Program.Controller.UnsyncedFolders.Contains (folder_name)) {
-                    	subfolder_item.Icon = new Image () {
-							Source = (BitmapSource) Imaging.CreateBitmapSourceFromHIcon (
-								System.Drawing.SystemIcons.Exclamation.Handle, 
-								Int32Rect.Empty,
-								BitmapSizeOptions.FromWidthAndHeight (16,16)
-							)
-						};  
-						
+				    if (!string.IsNullOrEmpty (Controller.OverflowFolderErrors [i])) {
+                        subfolder_item.Icon = new Image () {
+                            Source = (BitmapSource) Imaging.CreateBitmapSourceFromHIcon (
+                                System.Drawing.SystemIcons.Exclamation.Handle, Int32Rect.Empty,
+                                BitmapSizeOptions.FromWidthAndHeight (16,16)
+                            )
+                        };
+
+                        SparkleMenuItem error_item = new SparkleMenuItem () {
+                            Header    = Controller.OverflowFolderErrors [i],
+                            IsEnabled = false
+                        };
+                        
+                        subfolder_item.Items.Add (error_item);
+            			
 					} else {
                         subfolder_item.Icon = subfolder_image;
 					}
 					
 					more_item.Items.Add (subfolder_item);
+
+                    i++;
                 }
 				
 				if (more_item.Items.Count > 0) {
@@ -276,20 +317,6 @@ namespace SparkleShare {
         public void Dispose ()
         {
             this.notify_icon.Dispose ();
-        }
-		
-		
-		private void CreateAnimationFrames ()
-        {
-            this.animation_frames = new Drawing.Bitmap [] {
-	            SparkleUIHelpers.GetBitmap ("process-syncing-i"),
-	            SparkleUIHelpers.GetBitmap ("process-syncing-ii"),
-	            SparkleUIHelpers.GetBitmap ("process-syncing-iii"),
-	            SparkleUIHelpers.GetBitmap ("process-syncing-iiii"),
-	            SparkleUIHelpers.GetBitmap ("process-syncing-iiiii")
-			};
-			
-			this.error_icon = SparkleUIHelpers.GetBitmap ("process-syncing-error");
         }
 
 
