@@ -535,12 +535,15 @@ namespace SparkleShare {
 
 
         public void StartFetcher (string address, string required_fingerprint,
-            string remote_path, string announcements_url, bool fetch_prior_history)
+            string remote_path, string announcements_url, string local_path, bool fetch_prior_history)
         {
             if (announcements_url != null)
                 announcements_url = announcements_url.Trim ();
 
-            string tmp_path = this.config.TmpPath;
+            if (!Directory.Exists (local_path)) 
+                Directory.CreateDirectory (local_path);
+
+            string tmp_path = this.config.TmpPath (local_path);
 
             if (!Directory.Exists (tmp_path)) {
                 Directory.CreateDirectory (tmp_path);
@@ -557,7 +560,7 @@ namespace SparkleShare {
             try {
                 this.fetcher = (SparkleFetcherBase) Activator.CreateInstance (
                     Type.GetType ("SparkleLib." + backend + ".SparkleFetcher, SparkleLib." + backend),
-                        address, required_fingerprint, remote_path, tmp_folder, fetch_prior_history
+                        address, required_fingerprint, remote_path, tmp_path, tmp_folder, fetch_prior_history
                 );
 
             } catch (Exception e) {
@@ -578,7 +581,7 @@ namespace SparkleShare {
                     ShowSetupWindowEvent (PageType.CryptoPassword);
 
                 } else {
-                    FinishFetcher ();
+                    FinishFetcher (local_path);
                 }
             };
 
@@ -623,14 +626,14 @@ namespace SparkleShare {
         }
 
 
-        public void FinishFetcher (string password)
+        public void FinishFetcher (string local_path, string password)
         {
             this.fetcher.EnableFetchedRepoCrypto (password);
-            FinishFetcher ();
+            FinishFetcher (local_path);
         }
 
 
-        public void FinishFetcher ()
+        public void FinishFetcher (string local_path)
         {
             this.watcher.EnableRaisingEvents = false;
 
@@ -641,7 +644,7 @@ namespace SparkleShare {
             canonical_name = canonical_name.Replace ("_", " ");
 
             bool target_folder_exists = Directory.Exists (
-                Path.Combine (this.config.FoldersPath, canonical_name));
+                Path.Combine (local_path, canonical_name));
 
             // Add a numbered suffix to the name if a folder with the same name
             // already exists. Example: "Folder (2)"
@@ -649,7 +652,7 @@ namespace SparkleShare {
             while (target_folder_exists) {
                 suffix++;
                 target_folder_exists = Directory.Exists (
-                    Path.Combine (this.config.FoldersPath, canonical_name + " (" + suffix + ")"));
+                    Path.Combine (local_path, canonical_name + " (" + suffix + ")"));
             }
 
             string target_folder_name = canonical_name;
@@ -657,7 +660,7 @@ namespace SparkleShare {
             if (suffix > 1)
                 target_folder_name += " (" + suffix + ")";
 
-            string target_folder_path = Path.Combine (this.config.FoldersPath, target_folder_name);
+            string target_folder_path = Path.Combine (local_path, target_folder_name);
 
             try {
                 Directory.Move (this.fetcher.TargetFolder, target_folder_path);
@@ -679,7 +682,7 @@ namespace SparkleShare {
             string backend = SparkleFetcherBase.GetBackend (this.fetcher.RemoteUrl.AbsolutePath);
 
             this.config.AddFolder (target_folder_name, this.fetcher.Identifier,
-                this.fetcher.RemoteUrl.ToString (), backend);
+                this.fetcher.RemoteUrl.ToString (), backend, local_path);
 
             RepositoriesLoaded = true;
 

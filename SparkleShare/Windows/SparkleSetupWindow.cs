@@ -100,6 +100,10 @@ namespace SparkleShare {
             ContentCanvas.Children.Remove (this.line);
             
             ContentCanvas.Children.Remove (this.side_splash);
+                        
+            Width  = 640;
+            Height = 440;
+
             ContentCanvas = new Canvas ();
             Content       = ContentCanvas;
             
@@ -110,6 +114,7 @@ namespace SparkleShare {
             Buttons       = new List <Button> ();
             Header        = "";
             Description   = "";
+
         }
         
         

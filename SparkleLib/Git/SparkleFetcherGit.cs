@@ -62,9 +62,9 @@ namespace SparkleLib.Git {
         }
 
 
-        public SparkleFetcher (string server, string required_fingerprint, string remote_path,
+        public SparkleFetcher (string server, string required_fingerprint, string remote_path, string tmp_path,
             string target_folder, bool fetch_prior_history) : base (server, required_fingerprint,
-                remote_path, target_folder, fetch_prior_history)
+                remote_path, tmp_path, target_folder, fetch_prior_history)
         {
             Uri uri = RemoteUrl;
 
@@ -109,11 +109,11 @@ namespace SparkleLib.Git {
         public override bool Fetch ()
         {
             if (FetchPriorHistory) {
-                this.git = new SparkleGit (SparkleConfig.DefaultConfig.TmpPath,
+                this.git = new SparkleGit (TmpPath,
                     "clone --progress --no-checkout \"" + RemoteUrl + "\" \"" + TargetFolder + "\"");
 
             } else {
-                this.git = new SparkleGit (SparkleConfig.DefaultConfig.TmpPath,
+                this.git = new SparkleGit (TmpPath,
                     "clone --progress --no-checkout --depth=1 \"" + RemoteUrl + "\" \"" + TargetFolder + "\"");
             }
 

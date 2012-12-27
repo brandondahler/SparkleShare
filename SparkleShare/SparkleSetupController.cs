@@ -21,6 +21,8 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 
+using Forms = System.Windows.Forms;
+
 using SparkleLib;
 
 namespace SparkleShare {
@@ -73,6 +75,9 @@ namespace SparkleShare {
         public event ChangePathFieldEventHandler ChangePathFieldEvent = delegate { };
         public delegate void ChangePathFieldEventHandler (string text, string example_text, FieldState state);
 
+        public event BrowseLocalPathFieldEventHandler BrowseLocalPathFieldEvent = delegate { };
+        public delegate void BrowseLocalPathFieldEventHandler (string local_path);
+
         public readonly List<SparklePlugin> Plugins = new List<SparklePlugin> ();
         public SparklePlugin SelectedPlugin;
 
@@ -82,6 +87,7 @@ namespace SparkleShare {
         public string PreviousUrl { get; private set; }
         public string PreviousAddress { get; private set; }
         public string PreviousPath { get; private set; }
+        public string PreviousLocalPath { get; private set; }
         public string SyncingFolder { get; private set; }
         public double ProgressBarPercentage  { get; private set; }
 
@@ -99,6 +105,7 @@ namespace SparkleShare {
         }
 
         private PageType current_page;
+        private string current_local_path = "";
         private string saved_address     = "";
         private string saved_remote_path = "";
         private bool create_startup_item = true;
@@ -114,6 +121,7 @@ namespace SparkleShare {
             TutorialPageNumber = 0;
             PreviousAddress    = "";
             PreviousPath       = "";
+            PreviousLocalPath = Program.Controller.FoldersPath;
             PreviousUrl        = "";
             SyncingFolder      = "";
 
@@ -204,11 +212,12 @@ namespace SparkleShare {
 
         public void PageCancelled ()
         {
-            PendingInvite   = null;
-            SelectedPlugin  = Plugins [0];
-            PreviousAddress = "";
-            PreviousPath    = "";
-            PreviousUrl     = "";
+            PendingInvite     = null;
+            SelectedPlugin    = Plugins [0];
+            PreviousAddress   = "";
+            PreviousPath      = "";
+            PreviousLocalPath = Program.Controller.FoldersPath;
+            PreviousUrl       = "";
 
             this.fetch_prior_history = false;
 
@@ -343,8 +352,19 @@ namespace SparkleShare {
             UpdateAddProjectButtonEvent (fields_valid);
         }
 
+        public void BrowseLocalPath (string local_path)
+        {
+            Forms.FolderBrowserDialog folder_browser = new Forms.FolderBrowserDialog() {
+                SelectedPath = local_path
+            };
 
-        public void AddPageCompleted (string address, string remote_path)
+            Forms.DialogResult browser_result = folder_browser.ShowDialog ();
+            if (browser_result == Forms.DialogResult.OK)
+                BrowseLocalPathFieldEvent (folder_browser.SelectedPath);
+        }
+
+
+        public void AddPageCompleted (string address, string remote_path, string local_path)
         {
             SyncingFolder = Path.GetFileName (remote_path);
 
@@ -364,16 +384,21 @@ namespace SparkleShare {
             if (SelectedPlugin.PathUsesLowerCase)
                 remote_path = remote_path.ToLower ();
 
-            PreviousAddress = address;
-            PreviousPath    = remote_path;
+            current_local_path = local_path;
+            current_local_path = current_local_path.Trim();
+            current_local_path = current_local_path.TrimEnd ("/".ToCharArray ());
+
+            PreviousAddress   = address;
+            PreviousPath      = remote_path;
+            PreviousLocalPath = current_local_path;
 
             Program.Controller.FolderFetched    += AddPageFetchedDelegate;
             Program.Controller.FolderFetchError += AddPageFetchErrorDelegate;
             Program.Controller.FolderFetching   += SyncingPageFetchingDelegate;
 
             new Thread (() => {
-                Program.Controller.StartFetcher (address, SelectedPlugin.Fingerprint, remote_path,
-                    SelectedPlugin.AnnouncementsUrl, this.fetch_prior_history);
+                Program.Controller.StartFetcher (address, SelectedPlugin.Fingerprint, remote_path, 
+                    SelectedPlugin.AnnouncementsUrl, current_local_path, this.fetch_prior_history);
 
             }).Start ();
         }
@@ -460,7 +485,7 @@ namespace SparkleShare {
                 Program.Controller.FolderFetching   += SyncingPageFetchingDelegate;
 
                 Program.Controller.StartFetcher (PendingInvite.Address, PendingInvite.Fingerprint,
-                    PendingInvite.RemotePath, PendingInvite.AnnouncementsUrl, false); // TODO: checkbox on invite page
+                    PendingInvite.RemotePath, PendingInvite.AnnouncementsUrl, Program.Controller.FoldersPath, false); // TODO: checkbox on invite page
 
             }).Start ();
         }
@@ -535,6 +560,7 @@ namespace SparkleShare {
 
         public void CryptoSetupPageCompleted (string password)
         {
+
             CryptoPasswordPageCompleted (password);
         }
 
@@ -546,7 +572,7 @@ namespace SparkleShare {
 
             new Thread (() => {
                 Thread.Sleep (1000);
-                Program.Controller.FinishFetcher (password);
+                Program.Controller.FinishFetcher (current_local_path, password);
 
             }).Start ();
         }
@@ -570,10 +596,11 @@ namespace SparkleShare {
 
         public void FinishPageCompleted ()
         {
-            SelectedPlugin  = Plugins [0];
-            PreviousUrl     = "";
-            PreviousAddress = "";
-            PreviousPath    = "";
+            SelectedPlugin    = Plugins [0];
+            PreviousUrl       = "";
+            PreviousAddress   = "";
+            PreviousPath      = "";
+            PreviousLocalPath = Program.Controller.FoldersPath;
             this.fetch_prior_history = false;
 
             this.current_page = PageType.None;

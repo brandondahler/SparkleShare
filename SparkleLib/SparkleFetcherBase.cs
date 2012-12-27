@@ -46,6 +46,7 @@ namespace SparkleLib {
         public Uri RemoteUrl { get; protected set; }
         public string RequiredFingerprint { get; protected set; }
         public readonly bool FetchPriorHistory = false;
+        public string TmpPath { get; protected set; }
         public string TargetFolder { get; protected set; }
         public bool IsActive { get; private set; }
         public string Identifier;
@@ -91,7 +92,7 @@ namespace SparkleLib {
 
 
         public SparkleFetcherBase (string server, string required_fingerprint,
-            string remote_path, string target_folder, bool fetch_prior_history)
+            string remote_path, string tmp_path, string target_folder, bool fetch_prior_history)
         {
             RequiredFingerprint = required_fingerprint;
             FetchPriorHistory   = fetch_prior_history;
@@ -106,6 +107,7 @@ namespace SparkleLib {
             if (!server.Contains ("://"))
                 server = "ssh://" + server;
 
+            TmpPath = tmp_path;
             TargetFolder = target_folder;
             RemoteUrl    = new Uri (server + remote_path);
             IsActive     = false;
@@ -263,7 +265,7 @@ namespace SparkleLib {
 
             Process process = new Process ();
             process.StartInfo.FileName               = "ssh-keyscan";
-            process.StartInfo.WorkingDirectory       = SparkleConfig.DefaultConfig.TmpPath;
+            process.StartInfo.WorkingDirectory       = TmpPath;
             process.StartInfo.UseShellExecute        = false;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.CreateNoWindow         = true;

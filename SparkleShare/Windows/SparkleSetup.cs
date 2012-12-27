@@ -29,8 +29,8 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shell;
-
 using Drawing = System.Drawing;
+using Forms = System.Windows.Forms;
 using Imaging = System.Windows.Interop.Imaging;
 using WPF = System.Windows.Controls;
 
@@ -229,7 +229,7 @@ namespace SparkleShare {
                         
                     case PageType.Add: {
                         Header = "Where's your project hosted?";
-                        
+                        Height = 455;
 
                         ListView list_view = new ListView () {
                             Width  = 419,
@@ -318,6 +318,34 @@ namespace SparkleShare {
                             Width      = 200,
                             Foreground = new SolidColorBrush (Color.FromRgb (128, 128, 128))
                         };
+
+                        string linkTemplateXaml = 
+                            "<ControlTemplate TargetType=\"Button\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"" +
+                            "  xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
+                            "  <TextBlock TextDecorations=\"Underline\">" +
+                            "    <ContentPresenter />" +
+                            "  </TextBlock>" +
+                            "</ControlTemplate>";
+
+                        Button advanced_link = new Button () {
+                            Content  = "Show advanced options",
+                            FontSize = 11,
+                            Template = (ControlTemplate) XamlReader.Parse (linkTemplateXaml)
+                        };
+
+                        Canvas advanced_canvas = new Canvas() {
+                            Visibility = System.Windows.Visibility.Collapsed
+                        };
+
+                        TextBox local_address_box = new TextBox() {
+                            Width = 300,
+                            Text  = Controller.PreviousLocalPath
+                        };
+
+                        Button local_address_browse = new Button() {
+                            Content = "Browse...",
+                            Width = 90
+                        };
                         
                         Button cancel_button = new Button () {
                             Content = "Cancel"
@@ -368,6 +396,19 @@ namespace SparkleShare {
                         ContentCanvas.Children.Add (path_help_label);
                         Canvas.SetTop (path_help_label, 330);
                         Canvas.SetRight (path_help_label, 30);
+
+                        ContentCanvas.Children.Add (advanced_link);
+                        Canvas.SetTop (advanced_link, 360);
+                        Canvas.SetLeft (advanced_link, 185);
+
+                        ContentCanvas.Children.Add (advanced_canvas);
+                        Canvas.SetTop (advanced_canvas, 385);
+                        Canvas.SetLeft (advanced_canvas, 185);
+
+                        advanced_canvas.Children.Add (local_address_box);
+                        
+                        advanced_canvas.Children.Add (local_address_browse);
+                        Canvas.SetLeft (local_address_browse, 329);
                         
                         TaskbarItemInfo.ProgressValue = 0.0;
                         TaskbarItemInfo.ProgressState = TaskbarItemProgressState.None;
@@ -398,6 +439,12 @@ namespace SparkleShare {
                                 path_help_label.Text = example_text;
                             });
                         };
+
+                        Controller.BrowseLocalPathFieldEvent += delegate (string local_path) {
+                            Dispatcher.BeginInvoke ((Action) delegate {
+                                local_address_box.Text = local_path;
+                            });
+                        };
                         
                         Controller.UpdateAddProjectButtonEvent += delegate (bool button_enabled) {
                             Dispatcher.BeginInvoke ((Action) delegate {
@@ -422,13 +469,31 @@ namespace SparkleShare {
                         path_box.TextChanged += delegate {
                             Controller.CheckAddPage (address_box.Text, path_box.Text, list_view.SelectedIndex);
                         };
+
+                        advanced_link.Click += delegate {
+                            Dispatcher.BeginInvoke ((Action) delegate {
+                                if (advanced_canvas.Visibility == Visibility.Visible) {
+                                    Height = 455;
+                                    advanced_canvas.Visibility = Visibility.Collapsed;
+                                    advanced_link.Content = "Show advanced options";
+                                } else {
+                                    Height = 485;
+                                    advanced_canvas.Visibility = Visibility.Visible;
+                                    advanced_link.Content = "Hide advanced options";
+                                }
+                            });
+                        };
                         
+                        local_address_browse.Click += delegate {
+                            Controller.BrowseLocalPath (local_address_box.Text);
+                        };
+
                         cancel_button.Click += delegate {
                             Controller.PageCancelled ();
                         };
 
                         add_button.Click += delegate {
-                            Controller.AddPageCompleted (address_box.Text, path_box.Text);
+                            Controller.AddPageCompleted (address_box.Text, path_box.Text, local_address_box.Text);
                         };
                                           
                         break;

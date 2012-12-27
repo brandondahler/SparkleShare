@@ -28,7 +28,6 @@ namespace SparkleLib {
         public static bool DebugMode = true;
 
         public string FullPath;
-        public string TmpPath;
         public string LogFilePath;
 
 
@@ -49,6 +48,13 @@ namespace SparkleLib {
                 else
                     return Path.Combine (HomePath, "SparkleShare");
             }
+        }
+
+        public string TmpPath (string folder_path = null) {
+            if (folder_path == null)
+                folder_path = FoldersPath;
+
+            return Path.Combine (folder_path, ".tmp");
         }
 
 
@@ -91,8 +97,7 @@ namespace SparkleLib {
 
             } finally {
                 Load (FullPath);
-                TmpPath = Path.Combine (FoldersPath, ".tmp");
-                Directory.CreateDirectory (TmpPath);
+                Directory.CreateDirectory (TmpPath ());
             }
         }
 
@@ -178,7 +183,7 @@ namespace SparkleLib {
         }
 
 
-        public void AddFolder (string name, string identifier, string url, string backend)
+        public void AddFolder (string name, string identifier, string url, string backend, string local_path = null)
         {
             XmlNode node_name       = CreateElement ("name");
             XmlNode node_identifier = CreateElement ("identifier");
@@ -196,6 +201,13 @@ namespace SparkleLib {
             node_folder.AppendChild (node_identifier);
             node_folder.AppendChild (node_url);
             node_folder.AppendChild (node_backend);
+
+            if (local_path != null) {
+                XmlNode node_path   = CreateElement ("path");
+                node_path.InnerText = local_path;
+
+                node_folder.AppendChild (node_path);
+            }
 
             XmlNode node_root = SelectSingleNode ("/sparkleshare");
             node_root.AppendChild (node_folder);
@@ -223,7 +235,6 @@ namespace SparkleLib {
             node_folder ["name"].InnerText = name;
             Save ();
         }
-
 
         public string GetBackendForFolder (string name)
         {
