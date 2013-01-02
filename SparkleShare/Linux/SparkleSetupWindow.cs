@@ -169,6 +169,8 @@ namespace SparkleShare {
             Header      = "";
             Description = "";
 
+            SetSizeRequest (680, 400);
+
             if (OptionArea.Children.Length > 0)
                 OptionArea.Remove (OptionArea.Children [0]);
 

@@ -121,11 +121,15 @@ namespace SparkleShare {
 
             if (type == PageType.Add) {
                 Header = "Where's your project hosted?";
+        
+                SetSizeRequest (640, 415);
 
                 VBox layout_vertical = new VBox (false, 12);
+		VBox layout_std_adv  = new VBox (false, 12);
                 HBox layout_fields   = new HBox (true, 12);
                 VBox layout_address  = new VBox (true, 0);
                 VBox layout_path     = new VBox (true, 0);
+		HBox layout_advanced = new HBox (false, 29);
 
                 ListStore store = new ListStore (typeof (Gdk.Pixbuf), typeof (string), typeof (SparklePlugin));
 
@@ -179,6 +183,17 @@ namespace SparkleShare {
                         SecondaryTextColor + "\">" + Controller.SelectedPlugin.PathExample + "</span>"
                 };
 
+                Expander advanced_expander = new Expander ("") {
+                    Expanded = false,
+                    UseMarkup = true,
+                    Label = "<span size=\"small\">Show advanced options</span>",
+                };
+
+                Entry local_path_entry = new Entry () {
+                    Text = Controller.PreviousLocalPath
+                };
+
+                Button local_path_button = new Button ("Browse...");
 
                 // Select the first plugin by default
                 TreeSelection default_selection = tree.Selection;
@@ -275,10 +290,18 @@ namespace SparkleShare {
                 layout_fields.PackStart (layout_address);
                 layout_fields.PackStart (layout_path);
 
+
+                layout_advanced.PackStart (local_path_entry, true, true, 0);
+                layout_advanced.PackStart (local_path_button, false, false, 0);
+                advanced_expander.Add (layout_advanced);
+
+                layout_std_adv.PackStart (layout_fields, false, false, 0);
+                layout_std_adv.PackStart (advanced_expander, false, false, 0);
+
                 layout_vertical.PackStart (new Label (""), false, false, 0);
                 layout_vertical.PackStart (scrolled_window, true, true, 0);
-                layout_vertical.PackStart (layout_fields, false, false, 0);
-
+		layout_vertical.PackStart (layout_std_adv, false, false, 0);
+                
                 Add (layout_vertical);
 
                 Button cancel_button = new Button ("Cancel");
@@ -287,13 +310,37 @@ namespace SparkleShare {
                 cancel_button.Clicked += delegate { Controller.PageCancelled (); };
 
                 add_button.Clicked += delegate {
-                    Controller.AddPageCompleted (address_entry.Text, path_entry.Text);
+                    Controller.AddPageCompleted (address_entry.Text, path_entry.Text, local_path_entry.Text);
                 };
 
                 Controller.UpdateAddProjectButtonEvent += delegate (bool button_enabled) {
                     Application.Invoke (delegate {
                         add_button.Sensitive = button_enabled;                            
                     });
+                };
+
+                advanced_expander.Activated += delegate {
+                    if (advanced_expander.Expanded)
+                        SetSizeRequest (640, 440);
+                    else
+                        SetSizeRequest (640, 415);
+                };
+
+                local_path_button.Clicked += delegate {
+                    FileChooserDialog folder_browser = new FileChooserDialog ("Browse For Folder", this, 
+                        FileChooserAction.SelectFolder, 
+                        "Cancel", ResponseType.Cancel,
+                        "Open", ResponseType.Accept
+                    );
+
+                    folder_browser.SetCurrentFolder (local_path_entry.Text);
+
+                    if (folder_browser.Run () == (int) ResponseType.Accept)
+                        local_path_entry.Text = folder_browser.Filename;
+                    
+
+                    folder_browser.Destroy ();
+
                 };
 
                 CheckButton check_button = new CheckButton ("Fetch prior history") { Active = false };
