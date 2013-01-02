@@ -439,12 +439,6 @@ namespace SparkleShare {
                                 path_help_label.Text = example_text;
                             });
                         };
-
-                        Controller.BrowseLocalPathFieldEvent += delegate (string local_path) {
-                            Dispatcher.BeginInvoke ((Action) delegate {
-                                local_address_box.Text = local_path;
-                            });
-                        };
                         
                         Controller.UpdateAddProjectButtonEvent += delegate (bool button_enabled) {
                             Dispatcher.BeginInvoke ((Action) delegate {
@@ -485,7 +479,17 @@ namespace SparkleShare {
                         };
                         
                         local_address_browse.Click += delegate {
-                            Controller.BrowseLocalPath (local_address_box.Text);
+                            Forms.FolderBrowserDialog folder_browser = new Forms.FolderBrowserDialog() {
+                                SelectedPath = local_address_box.Text
+                            };
+
+                            Forms.DialogResult browser_result = folder_browser.ShowDialog ();
+                            if (browser_result == Forms.DialogResult.OK)
+                            {
+                                Dispatcher.BeginInvoke ((Action) delegate {
+                                    local_address_box.Text = folder_browser.SelectedPath;
+                                });
+                            }
                         };
 
                         cancel_button.Click += delegate {

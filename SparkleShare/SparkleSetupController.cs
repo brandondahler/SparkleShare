@@ -21,8 +21,6 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-using Forms = System.Windows.Forms;
-
 using SparkleLib;
 
 namespace SparkleShare {
@@ -74,9 +72,6 @@ namespace SparkleShare {
 
         public event ChangePathFieldEventHandler ChangePathFieldEvent = delegate { };
         public delegate void ChangePathFieldEventHandler (string text, string example_text, FieldState state);
-
-        public event BrowseLocalPathFieldEventHandler BrowseLocalPathFieldEvent = delegate { };
-        public delegate void BrowseLocalPathFieldEventHandler (string local_path);
 
         public readonly List<SparklePlugin> Plugins = new List<SparklePlugin> ();
         public SparklePlugin SelectedPlugin;
@@ -351,18 +346,6 @@ namespace SparkleShare {
 
             UpdateAddProjectButtonEvent (fields_valid);
         }
-
-        public void BrowseLocalPath (string local_path)
-        {
-            Forms.FolderBrowserDialog folder_browser = new Forms.FolderBrowserDialog() {
-                SelectedPath = local_path
-            };
-
-            Forms.DialogResult browser_result = folder_browser.ShowDialog ();
-            if (browser_result == Forms.DialogResult.OK)
-                BrowseLocalPathFieldEvent (folder_browser.SelectedPath);
-        }
-
 
         public void AddPageCompleted (string address, string remote_path, string local_path)
         {
