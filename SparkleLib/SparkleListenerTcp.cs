@@ -62,13 +62,25 @@ namespace SparkleLib {
                     port = 443;
 
                 try {
-                    this.socket = new Socket (AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) {
-                        ReceiveTimeout = 5 * 1000,
-                        SendTimeout    = 5 * 1000
-                    };
+                    try {
+                        this.socket = new Socket (AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp) {
+                            ReceiveTimeout = 5 * 1000,
+                            SendTimeout    = 5 * 1000
+                        };
 
-                    // Try to connect to the server
-                    this.socket.Connect (Server.Host, port);
+                        // Try to connect to the server using IPv6
+                        this.socket.Connect (Server.Host, port);
+
+                    } catch (Exception) {
+                        // If we error out, try connecting with IPv4 instead
+                        this.socket = new Socket (AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) {
+                            ReceiveTimeout  = 5 * 1000,
+                            SendTimeout     = 5 * 1000
+                        };
+
+                        // Try to connect to the server using IPv4
+                        this.socket.Connect (Server.Host, port);
+                    }
 
                     this.is_connecting = false;
                     this.is_connected  = true;
